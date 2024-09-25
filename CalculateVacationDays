@@ -1,0 +1,43 @@
+--此函数提供两个datetime参数值，且两个参数必须是同一天，函数自动计算这一天在公司规章中的请假天数。默认公司规章上班时间为上午08:30-11:30，下午13:00-17:30。
+--若贵司与此时间不同，可以自行更改
+ALTER FUNCTION dbo.F_CalculateDateDifference(
+    @StartDateTime DATETIME,
+    @EndDateTime DATETIME
+)
+RETURNS FLOAT
+AS
+BEGIN
+    DECLARE @Difference FLOAT;
+
+    -- 计算两个日期时间之间的请假天数，仅针对同一天请假的情况
+	if convert(varchar(100),@StartDateTime,23)=convert(varchar(100),@EndDateTime,23)
+	begin
+		--不合法数据处理，即仅填写了日期没有填时间或者时间在08:30-17:30之外
+		if DATEDIFF(MINUTE,@StartDateTime,cast(concat(convert(varchar(100),@StartDateTime,23),' 00:00:00') as datetime))=0
+			set @StartDateTime=cast(concat(convert(varchar(100),@StartDateTime,23),' 08:30:00') as datetime)
+		else if DATEDIFF(MINUTE,@StartDateTime,cast(concat(convert(varchar(100),@StartDateTime,23),' 08:30:00') as datetime))>0
+			set @StartDateTime=cast(concat(convert(varchar(100),@StartDateTime,23),' 08:30:00') as datetime)
+		if DATEDIFF(MINUTE,@EndDateTime,cast(concat(convert(varchar(100),@EndDateTime,23),' 00:00:00') as datetime))=0
+			set @EndDateTime=cast(concat(convert(varchar(100),@EndDateTime,23),' 17:30:00') as datetime)
+		else if DATEDIFF(MINUTE,@EndDateTime,cast(concat(convert(varchar(100),@EndDateTime,23),' 17:30:00') as datetime))<0
+			set @EndDateTime=cast(concat(convert(varchar(100),@EndDateTime,23),' 17:30:00') as datetime)
+		--开始计算请假天数
+		set @Difference=case
+		--不合法数据处理，即开始和结束日期都仅填写了日期没有填时间
+		when DATEDIFF(MINUTE,@StartDateTime,cast(concat(convert(varchar(100),@StartDateTime,23),' 00:00:00') as datetime))=0 and DATEDIFF(MINUTE,@EndDateTime,cast(concat(convert(varchar(100),@StartDateTime,23),' 00:00:00') as datetime))=0 then 1
+		--下午请假
+		when DATEDIFF(MINUTE,@StartDateTime,cast(concat(convert(varchar(100),@StartDateTime,23),' 13:00:00') as datetime))<=0 then DATEDIFF(MINUTE,@StartDateTime,@EndDateTime)/30/15.00 
+		--上午请假
+		when DATEDIFF(MINUTE,@EndDateTime,cast(concat(convert(varchar(100),@StartDateTime,23),' 11:30:00') as datetime))>=0 then DATEDIFF(MINUTE,@StartDateTime,@EndDateTime)/30/15.00 
+		--跨午休请假
+		when DATEDIFF(MINUTE,@StartDateTime,cast(concat(convert(varchar(100),@StartDateTime,23),' 11:30:00') as datetime))>=0 and DATEDIFF(MINUTE,@EndDateTime,cast(concat(convert(varchar(100),@StartDateTime,23),' 13:00:00') as datetime))<=0 then (DATEDIFF(MINUTE,@StartDateTime,@EndDateTime)/30-3)/15.00 
+		--上午请假，但是结束日期在午休中间
+		when DATEDIFF(MINUTE,@StartDateTime,cast(concat(convert(varchar(100),@StartDateTime,23),' 11:30:00') as datetime))>=0 and DATEDIFF(MINUTE,@EndDateTime,cast(concat(convert(varchar(100),@StartDateTime,23),' 11:30:00') as datetime))<0 then DATEDIFF(MINUTE,@StartDateTime,cast(concat(convert(varchar(100),@StartDateTime,23),' 11:30:00') as datetime))/30/15.00 
+		--下午请假，但是开始日期在午休中间
+		when DATEDIFF(MINUTE,@StartDateTime,cast(concat(convert(varchar(100),@StartDateTime,23),' 13:00:00') as datetime))>=0 and DATEDIFF(MINUTE,cast(concat(convert(varchar(100),@StartDateTime,23),' 13:00:00') as datetime),@EndDateTime)>0 then DATEDIFF(MINUTE,cast(concat(convert(varchar(100),@StartDateTime,23),' 13:00:00') as datetime),@EndDateTime)/30/15.00 
+		end
+	end
+	else
+		return -1;
+    RETURN @Difference;
+END;
